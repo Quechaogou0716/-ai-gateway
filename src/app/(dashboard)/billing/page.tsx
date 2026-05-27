@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { FadeInUp } from "@/components/motion/fade-in-up";
 import {
   StaggerContainer,
@@ -14,54 +16,57 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Check,
-  Zap,
   Coins,
   Gift,
-  QrCode,
   Loader2,
-  Smartphone,
+  Send,
+  Clock,
+  Copy,
 } from "lucide-react";
 
 export default function BillingPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanDefinition | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"ALIPAY" | "WECHAT" | null>(null);
+  const [txnId, setTxnId] = useState("");
   const [loading, setLoading] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
-  const [orderId, setOrderId] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const [pendingOrders, setPendingOrders] = useState<any[]>([]);
 
-  async function handlePurchase(plan: PlanDefinition) {
-    setSelectedPlan(plan);
-    setPaymentMethod(null);
-    setQrCodeUrl(null);
-  }
+  useEffect(() => {
+    fetch("/api/user/pending-orders")
+      .then((r) => r.json())
+      .then((d) => setPendingOrders(d.orders || []))
+      .catch(() => {});
+  }, []);
 
-  async function handlePayment(method: "ALIPAY" | "WECHAT") {
-    if (!selectedPlan) return;
-    setPaymentMethod(method);
+  async function handleSubmit() {
+    if (!selectedPlan || !txnId.trim()) return;
     setLoading(true);
-
     try {
       const res = await fetch("/api/billing/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           planId: selectedPlan.id,
-          method,
+          method: "MANUAL",
+          transactionId: txnId.trim(),
         }),
       });
-      const data = await res.json();
-      if (data.qrCodeUrl) {
-        setQrCodeUrl(data.qrCodeUrl);
-        setOrderId(data.orderId);
-        toast.success("订单已创建，请扫码支付");
+      if (res.ok) {
+        setSubmitted(true);
+        toast.success("订单已提交，等待管理员确认");
       } else {
-        toast.info("支付功能需要配置支付商户信息");
+        const data = await res.json();
+        toast.error(data.error || "提交失败");
       }
     } catch {
-      toast.error("创建订单失败");
+      toast.error("网络错误");
     }
     setLoading(false);
   }
+
+  const totalCredits = selectedPlan
+    ? selectedPlan.credits + selectedPlan.bonusCredits
+    : 0;
 
   return (
     <div className="max-w-5xl space-y-8">
@@ -69,7 +74,7 @@ export default function BillingPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">充值积分</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            选择合适的套餐充值积分，用于调用 AI 模型 API
+            选择合适的套餐，向管理员转账后提交订单
           </p>
         </div>
       </FadeInUp>
@@ -79,7 +84,11 @@ export default function BillingPage() {
           <StaggerItem key={plan.id}>
             <ScaleOnHover>
               <button
-                onClick={() => handlePurchase(plan)}
+                onClick={() => {
+                  setSelectedPlan(plan);
+                  setSubmitted(false);
+                  setTxnId("");
+                }}
                 className={cn(
                   "w-full text-left glass rounded-2xl p-5 shadow-apple transition-all relative overflow-hidden",
                   selectedPlan?.id === plan.id &&
@@ -124,76 +133,126 @@ export default function BillingPage() {
       </StaggerContainer>
 
       <AnimatePresence>
-        {selectedPlan && (
+        {selectedPlan && !submitted && (
           <motion.div
-            initial={{ opacity: 0, y: 20, height: 0 }}
-            animate={{ opacity: 1, y: 0, height: "auto" }}
-            exit={{ opacity: 0, y: -10, height: 0 }}
-            className="overflow-hidden"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
           >
-            <div className="glass rounded-2xl p-6 shadow-apple">
-              <h2 className="text-lg font-semibold mb-4">
-                选择支付方式 — {selectedPlan.name} ({selectedPlan.credits + selectedPlan.bonusCredits}{" "}
-                积分 / {formatRMB(selectedPlan.priceCents)})
+            <div className="glass rounded-2xl p-6 shadow-apple space-y-4">
+              <h2 className="text-lg font-semibold">
+                确认充值 — {selectedPlan.name}
               </h2>
+              <p className="text-sm text-muted-foreground">
+                金额 <span className="font-bold text-foreground">{formatRMB(selectedPlan.priceCents)}</span>，
+                到账 <span className="font-bold text-foreground">{totalCredits}</span> 积分
+                {selectedPlan.bonusCredits > 0 && (
+                  <span className="text-emerald-600">
+                    （含 {selectedPlan.bonusCredits} 赠送）
+                  </span>
+                )}
+              </p>
 
-              <div className="flex gap-3 mb-6">
-                {(["ALIPAY", "WECHAT"] as const).map((method) => (
-                  <button
-                    key={method}
-                    onClick={() => handlePayment(method)}
-                    disabled={loading}
-                    className={cn(
-                      "flex items-center gap-2 px-5 py-3 rounded-xl border-2 transition-all text-sm font-medium",
-                      paymentMethod === method
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border hover:border-primary/30 text-muted-foreground"
-                    )}
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    {method === "ALIPAY" ? "支付宝" : "微信支付"}
-                  </button>
-                ))}
+              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-2">
+                  请先向管理员转账
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  联系管理员获取收款二维码或转账方式。转账完成后，填写下方的交易流水号提交审核。
+                </p>
               </div>
 
-              {loading && (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-sm text-muted-foreground">
-                    正在创建订单...
-                  </span>
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="txnId">微信/支付宝交易流水号</Label>
+                <Input
+                  id="txnId"
+                  placeholder="在微信/支付宝账单里找到这笔转账的流水号"
+                  value={txnId}
+                  onChange={(e) => setTxnId(e.target.value)}
+                  className="h-11 rounded-xl"
+                />
+              </div>
 
-              {qrCodeUrl && (
-                <motion.div
-                  initial={{ scale: 0.95, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="text-center"
-                >
-                  <div className="w-48 h-48 mx-auto bg-white rounded-2xl p-3 mb-4 flex items-center justify-center">
-                    <QrCode className="w-32 h-32 text-gray-800" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    请使用
-                    {paymentMethod === "ALIPAY" ? "支付宝" : "微信"}
-                    扫描二维码支付
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    支付完成后积分将自动到账
-                  </p>
-                </motion.div>
-              )}
+              <Button
+                onClick={handleSubmit}
+                disabled={loading || !txnId.trim()}
+                className="rounded-xl w-full"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Send className="w-4 h-4 mr-2" />
+                )}
+                提交审核
+              </Button>
+            </div>
+          </motion.div>
+        )}
 
-              {!qrCodeUrl && !loading && (
-                <p className="text-xs text-muted-foreground">
-                  提示: 真实支付需要配置支付宝/微信支付商户信息。当前为模拟环境。
-                </p>
-              )}
+        {submitted && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="glass rounded-2xl p-8 shadow-apple text-center">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center mx-auto mb-4"
+              >
+                <Check className="w-7 h-7 text-emerald-500" />
+              </motion.div>
+              <h2 className="text-lg font-semibold mb-2">已提交</h2>
+              <p className="text-sm text-muted-foreground">
+                管理员确认后积分将自动到账，请耐心等待
+              </p>
+              <Button
+                variant="ghost"
+                className="mt-4 rounded-xl"
+                onClick={() => {
+                  setSubmitted(false);
+                  setSelectedPlan(null);
+                }}
+              >
+                充值其他套餐
+              </Button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {pendingOrders.length > 0 && (
+        <FadeInUp>
+          <div className="glass rounded-2xl p-6 shadow-apple">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-500" />
+              待审核订单
+            </h2>
+            <div className="space-y-2">
+              {pendingOrders.map((order: any) => (
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-secondary/50"
+                >
+                  <div>
+                    <p className="text-sm font-medium">
+                      {order.totalCredits} 积分 / ¥
+                      {(order.amountCents / 100).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      流水号: {order.transactionId || "—"}
+                    </p>
+                  </div>
+                  <span className="text-xs px-2 py-1 rounded-full bg-amber-500/10 text-amber-600 font-medium">
+                    等待确认
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </FadeInUp>
+      )}
     </div>
   );
 }
