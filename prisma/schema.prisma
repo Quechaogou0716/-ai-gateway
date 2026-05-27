@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String         @id @default(cuid())
+  name           String?
+  email          String         @unique
+  emailVerified  DateTime?
+  image          String?
+  hashedPassword String
+  role           String         @default("USER")
+  credits        Int            @default(0)
+  apiKeys        ApiKey[]
+  accounts       Account[]
+  sessions       Session[]
+  creditLogs     CreditLog[]
+  usageLogs      UsageLog[]
+  paymentOrders  PaymentOrder[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model ApiKey {
+  id         String     @id @default(cuid())
+  userId     String
+  name       String
+  prefix     String
+  hashedKey  String     @unique
+  lastUsedAt DateTime?
+  enabled    Boolean    @default(true)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageLogs  UsageLog[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model CreditLog {
+  id             String        @id @default(cuid())
+  userId         String
+  amount         Int
+  balanceBefore  Int
+  balanceAfter   Int
+  type           String
+  description    String?
+  paymentOrderId String?
+  usageLogId     String?
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentOrder   PaymentOrder? @relation(fields: [paymentOrderId], references: [id])
+  usageLog       UsageLog?     @relation(fields: [usageLogId], references: [id])
+  createdAt      DateTime      @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model AiModel {
+  id                String     @id @default(cuid())
+  modelId           String     @unique
+  provider          String
+  displayName       String
+  description       String?
+  contextWindow     Int?
+  maxOutputTokens   Int?       @default(4096)
+  inputCreditPrice  Float
+  outputCreditPrice Float
+  isActive          Boolean    @default(true)
+  supportsVision    Boolean    @default(false)
+  supportsStreaming Boolean    @default(true)
+  sortOrder         Int        @default(0)
+  usageLogs         UsageLog[]
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+}
+
+model UsageLog {
+  id              String    @id @default(cuid())
+  userId          String
+  apiKeyId        String?
+  modelId         String
+  requestTokens   Int       @default(0)
+  responseTokens  Int       @default(0)
+  totalTokens     Int       @default(0)
+  creditsConsumed Int       @default(0)
+  isStreaming     Boolean   @default(false)
+  status          String    @default("SUCCESS")
+  errorMessage    String?
+  durationMs      Int?
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey          ApiKey?   @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  model           AiModel   @relation(fields: [modelId], references: [modelId])
+  creditLogs      CreditLog[]
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([apiKeyId])
+}
+
+model PaymentOrder {
+  id            String       @id @default(cuid())
+  userId        String
+  creditPlanId  String
+  amountCents   Int
+  credits       Int
+  bonusCredits  Int          @default(0)
+  totalCredits  Int
+  method        String
+  status        String       @default("PENDING")
+  outTradeNo    String       @unique
+  transactionId String?
+  paidAt        DateTime?
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creditPlan    CreditPlan   @relation(fields: [creditPlanId], references: [id])
+  creditLogs    CreditLog[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model CreditPlan {
+  id            String         @id @default(cuid())
+  name          String
+  credits       Int
+  priceCents    Int
+  bonusCredits  Int            @default(0)
+  isActive      Boolean        @default(true)
+  sortOrder     Int            @default(0)
+  paymentOrders PaymentOrder[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model SiteSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
