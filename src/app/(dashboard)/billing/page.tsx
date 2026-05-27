@@ -30,11 +30,16 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [pendingOrders, setPendingOrders] = useState<any[]>([]);
+  const [qrCodeBase64, setQrCodeBase64] = useState("");
 
   useEffect(() => {
     fetch("/api/user/pending-orders")
       .then((r) => r.json())
       .then((d) => setPendingOrders(d.orders || []))
+      .catch(() => {});
+    fetch("/api/settings/payment-qr")
+      .then((r) => r.json())
+      .then((d) => setQrCodeBase64(d.qrCodeBase64 || ""))
       .catch(() => {});
   }, []);
 
@@ -153,14 +158,31 @@ export default function BillingPage() {
                 )}
               </p>
 
-              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-2">
-                  请先向管理员转账
-                </p>
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  联系管理员获取收款二维码或转账方式。转账完成后，填写下方的交易流水号提交审核。
-                </p>
-              </div>
+              {qrCodeBase64 ? (
+                <div className="flex flex-col items-center gap-3 p-4 rounded-xl bg-secondary/30">
+                  <p className="text-sm font-semibold">请扫码支付</p>
+                  <img
+                    src={qrCodeBase64}
+                    alt="收款码"
+                    className="w-48 h-48 rounded-xl border border-border bg-white object-contain"
+                  />
+                  <p className="text-xs text-muted-foreground text-center">
+                    使用微信或支付宝扫描上方二维码
+                    <br />
+                    转账 <span className="font-bold text-foreground">{formatRMB(selectedPlan.priceCents)}</span>{" "}
+                    完成后填写下方流水号
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-2">
+                    请先向管理员转账
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    联系管理员获取收款二维码或转账方式。转账完成后，填写下方的交易流水号提交审核。
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="txnId">微信/支付宝交易流水号</Label>
